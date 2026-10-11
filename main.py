@@ -2,12 +2,13 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pytesseract
-from PIL import Image, ImageOps, ImageEnhance
+from PIL import Image
 import io
 import re
 
 app = FastAPI()
 
+# Allow the frontend to communicate with this backend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -23,34 +24,36 @@ def snap_to_valid_grade(num):
 @app.post("/extract-grades")
 async def extract_grades(file: UploadFile = File(...)):
     try:
+        # Read the uploaded image
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        image = image.convert('L')
-        image = ImageOps.autocontrast(image)
-        image = ImageEnhance.Sharpness(image).enhance(2.0)
+        # Run Tesseract OCR (much faster on a backend CPU)
+        text = pytesseract.image_to_string(image)
         
-        text = pytesseract.image_to_string(image, config=r'--oem 3 --psm 6')
-        
-        print("--- RAW TESSERACT OUTPUT START ---")
-        print(text)
-        print("--- RAW TESSERACT OUTPUT END ---")
-        
+        # Heuristic to find grades and units
+        words = text.split()
         extracted_data = []
         
-        tokens = re.findall(r'\b(?:[1-3]\.\d{1,2}|5\.00?|1[0257]0?|2[0257]0?|300?|500)\b', text)
-        
-        for token in tokens:
-            try:
-                val = float(token)
-                if val > 10:
-                    val = val / 100.0
-                
-                snapped = snap_to_valid_grade(val)
-                extracted_data.append({"grade": snapped, "units": 3})
-            except ValueError:
-                continue
+        for i in range(len(words)):
+            # Look for patterns that match grades (e.g., 1.25, 2.50, 3.0)
+            if re.match(r'^[1-3]\.\d{1,2}$|^5\.00?$', words[i]):
+                try:
+                    val = float(words[i])
+                    snapped = snap_to_valid_grade(val)
                     
-        return {"status": "success", "data": extracted_data, "raw_text": text}
+                    # Assume a default of 3 units, but scan nearby text for a 1-6 unit number
+                    units = 3 
+                    neighborhood = words[max(0, i-3):min(len(words), i+4)]
+                    for w in neighborhood:
+                        if re.match(r'^[1-6]$', w):
+                            units = int(w)
+                            break
+                    
+                    extracted_data.append({"grade": snapped, "units": units})
+                except ValueError:
+                    continue
+                    
+        return {"status": "success", "data": extracted_data}
     except Exception as e:
         return JSONResponse(status_code=500, content={"status": "error", "message": str(e)})
