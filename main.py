@@ -2,7 +2,7 @@ from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import pytesseract
-from PIL import Image
+from PIL import Image, ImageOps, ImageEnhance
 import io
 import re
 
@@ -28,8 +28,14 @@ async def extract_grades(file: UploadFile = File(...)):
         contents = await file.read()
         image = Image.open(io.BytesIO(contents))
         
-        # Run Tesseract OCR (much faster on a backend CPU)
-        text = pytesseract.image_to_string(image)
+        # Pre-process image for better OCR accuracy
+        image = image.convert('L') # Convert to Grayscale
+        image = ImageOps.autocontrast(image) # Improve contrast
+        image = ImageEnhance.Sharpness(image).enhance(2.0) # Sharpen edges
+        
+        # Run Tesseract with custom Page Segmentation Mode (PSM 6 helps with tables/blocks)
+        custom_config = r'--oem 3 --psm 6'
+        text = pytesseract.image_to_string(image, config=custom_config)
         
         # Heuristic to find grades and units
         words = text.split()
