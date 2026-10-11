@@ -3,12 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Fast GWA Calculator</title>
+    <title>GWA Calculator</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 md:p-8 font-sans">
     <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <h1 class="text-2xl font-bold text-gray-800 mb-2">Fast GWA Calculator</h1>
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">GWA Calculator</h1>
         <p class="text-gray-500 mb-6 text-sm">Upload a screenshot of your grades. We'll read it and calculate your scholarship status.</p>
 
         <!-- Upload Area -->
@@ -88,8 +88,8 @@
             formData.append('file', file);
 
             try {
-                // Point this to your backend URL when deployed (e.g., https://your-render-app.com/extract-grades)
-                const response = await fetch('http://localhost:8000/extract-grades', {
+            
+                const response = await fetch('https://gwa-calculator-ynty.onrender.com', {
                     method: 'POST',
                     body: formData
                 });
