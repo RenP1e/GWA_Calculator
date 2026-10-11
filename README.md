@@ -7,7 +7,6 @@ A web-based **General Weighted Average (GWA)** calculator designed for college s
 ## ✨ Features
 
 - 📸 **Automatic Screenshot Parsing:** Uses Optical Character Recognition (OCR) to detect grades and units from uploaded images.
-- 🎯 **Grade Snapping:** Automatically aligns raw OCR outputs to standard Philippine academic grading scale values (`1.00`, `1.25`, `1.50`, etc.).
 - ✏️ **Manual Verification Editor:** Auto-populates a dynamic table where students can quickly adjust, add, or remove grades before calculating.
 - 🏆 **Scholarship Classification:** Instantly classifies student standing according to honor brackets:
   - **1.00 - 1.50:** University Scholar (US)
