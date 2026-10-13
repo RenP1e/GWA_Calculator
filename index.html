@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CLSU GWA Calculator (Frontend OCR)</title>
+    <title>CLSU GWA Calculator (Auto-Scan)</title>
+    <!-- Load Tesseract.js directly from CDN -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
     
     <style>
@@ -32,6 +33,7 @@
             background-color: #007bff;
             color: white;
             border: none;
+            font-weight: bold;
         }
         button:hover { background-color: #0056b3; }
         .danger-btn { background-color: #ff4d4d; }
@@ -56,15 +58,18 @@
 
     <h2>GWA Calculator</h2>
 
+    <!-- OCR Scanner Section -->
     <div class="card">
-        <h3>1. Scan Grades (Optional)</h3>
+        <h3>1. Scan Grades (Auto-Fills Table)</h3>
         <input type="file" id="imageInput" accept="image/*">
         <button id="scanBtn">Scan with Tesseract</button>
-        <p id="loadingMsg">Initializing Tesseract & Preprocessing... (May take a moment on first run)</p>
+        <p id="loadingMsg">Scanning and analyzing text... please wait.</p>
         
-        <textarea id="ocrOutput" rows="5" placeholder="Raw OCR text will appear here..."></textarea>
+        <!-- Text area to show raw text ONLY if auto-parse fails -->
+        <textarea id="ocrOutput" rows="5" placeholder="Raw OCR text will appear here if auto-detect fails..."></textarea>
     </div>
 
+    <!-- Manual Entry & Table Section -->
     <div class="card">
         <h3>2. Input & Calculate</h3>
         <div style="display: flex; gap: 5px; flex-wrap: wrap;">
@@ -83,6 +88,7 @@
                 </tr>
             </thead>
             <tbody id="tableBody">
+                <!-- Rows will be added here via JS -->
             </tbody>
         </table>
 
@@ -93,7 +99,10 @@
     </div>
 
     <script>
-        
+        // Array to store our subjects
+        let subjects = [];
+
+        // --- 1. OCR AND PREPROCESSING LOGIC ---
         document.getElementById('scanBtn').addEventListener('click', () => {
             const fileInput = document.getElementById('imageInput');
             if (fileInput.files.length === 0) {
@@ -127,7 +136,7 @@
             
             for (let i = 0; i < data.length; i += 4) {
                 const brightness = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-                const color = brightness > 128 ? 255 : 0;
+                const color = brightness > 128 ? 255 : 0; 
                 data[i] = color;     
                 data[i+1] = color;   
                 data[i+2] = color;   
@@ -146,13 +155,11 @@
 
             try {
                 const cleanedImageDataUrl = preprocessImage(imgElement);
-
                 const worker = await Tesseract.createWorker('eng');
                 const { data: { text } } = await worker.recognize(cleanedImageDataUrl);
                 await worker.terminate();
 
-                ocrOutput.value = text;
-                ocrOutput.style.display = 'block';
+                parseTextToTable(text);
 
             } catch (error) {
                 console.error("OCR Error:", error);
@@ -162,10 +169,45 @@
             }
         }
 
+        // --- 2. AUTO-PARSER ---
+        function parseTextToTable(rawText) {
+            const lines = rawText.split('\n');
+            let subjectsFound = 0;
 
-        
-        let subjects = [];
+            lines.forEach(line => {
+                line = line.trim();
+                if (!line) return;
 
+                // Regex looks for a line ending with two numbers (Grade and Units)
+                const regex = /(.*?)\s+([1-5](?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$/;
+                const match = line.match(regex);
+
+                if (match) {
+                    const code = match[1].trim();
+                    const grade = parseFloat(match[2]);
+                    const units = parseFloat(match[3]);
+
+                    if (!isNaN(grade) && !isNaN(units)) {
+                        subjects.push({ code, grade, units });
+                        subjectsFound++;
+                    }
+                }
+            });
+
+            if (subjectsFound > 0) {
+                updateTableAndGWA();
+            } else {
+                // If auto-parser fails, show raw text so the user can manually copy
+                const ocrOutput = document.getElementById('ocrOutput');
+                ocrOutput.value = rawText;
+                ocrOutput.style.display = 'block';
+                alert("Could not automatically detect standard grades and units in the image. Please enter them manually, or review the raw text.");
+            }
+            
+            document.getElementById('imageInput').value = '';
+        }
+
+        // --- 3. GWA CALCULATOR LOGIC ---
         document.getElementById('addSubjectBtn').addEventListener('click', () => {
             const codeInput = document.getElementById('subjectCode');
             const gradeInput = document.getElementById('grade');
