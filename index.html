@@ -7,9 +7,9 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-50 min-h-screen p-4 md:p-8 font-sans">
-    <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+    <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-4 sm:p-6">
         <h1 class="text-2xl font-bold text-gray-800 mb-2">GWA Calculator</h1>
-        <p class="text-gray-500 mb-6 text-sm">Upload a screenshot of your grades. We'll read it and calculate your scholarship status.</p>
+        <p class="text-gray-500 mb-6 text-sm">Upload a screenshot of your grades. We'll read it, then press Calculate to see your scholarship status.</p>
 
         <!-- Upload Area -->
         <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:bg-gray-50 transition-colors mb-4 relative">
@@ -38,13 +38,19 @@
                 </div>
             </div>
             <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
+                <table class="w-full table-fixed text-left border-collapse">
+                    <colgroup>
+                        <col>
+                        <col class="w-[4.75rem] sm:w-28">
+                        <col class="w-[3.25rem] sm:w-24">
+                        <col class="w-8 sm:w-14">
+                    </colgroup>
                     <thead>
                         <tr class="bg-gray-50 text-gray-600 text-sm">
-                            <th class="p-3 border-b font-medium">Code</th>
-                            <th class="p-3 border-b font-medium">Grade</th>
-                            <th class="p-3 border-b font-medium">Units</th>
-                            <th class="p-3 border-b font-medium w-16"></th>
+                            <th class="p-2 sm:p-3 border-b font-medium">Code</th>
+                            <th class="p-2 sm:p-3 border-b font-medium">Grade</th>
+                            <th class="p-2 sm:p-3 border-b font-medium">Units</th>
+                            <th class="p-2 sm:p-3 border-b font-medium"></th>
                         </tr>
                     </thead>
                     <tbody id="gradesTableBody">
@@ -73,6 +79,18 @@
         <button id="toastAction" class="font-bold underline"></button>
     </div>
 
+    <!-- Popup for University Scholar and College Scholar -->
+    <div id="celebrate" class="hidden fixed inset-0 z-50 items-center justify-center p-4 bg-black/40" role="dialog" aria-modal="true" aria-labelledby="celebrateTitle">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 text-center">
+            <div class="text-5xl mb-2" aria-hidden="true">🎉</div>
+            <h2 id="celebrateTitle" class="text-xl font-bold text-gray-800">Congratulations!</h2>
+            <p id="celebrateText" class="text-gray-600 mt-1"></p>
+            <p id="celebrateGwa" class="text-4xl font-bold text-green-700 my-3"></p>
+            <p id="celebrateNote" class="hidden text-xs text-gray-500 mb-3"></p>
+            <button id="celebrateClose" class="w-full bg-blue-600 text-white font-semibold py-2.5 rounded-lg hover:bg-blue-700 transition-colors">Awesome!</button>
+        </div>
+    </div>
+
     <!-- The photo reader. It runs in this browser; the files it needs are in vendor/ -->
     <script src="vendor/tesseract.min.js"></script>
     <script src="src/tokens.js"></script>
@@ -82,6 +100,7 @@
     <script src="src/reader.js"></script>
     <script src="src/gwa.js"></script>
     <script src="src/engine.js"></script>
+    <script src="src/celebrate.js"></script>
 
     <script>
         const validGrades = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 5.00];
@@ -123,7 +142,7 @@
 
         function createDropdown(selectedGrade) {
             const sel = document.createElement('select');
-            sel.className = 'grade-input w-full p-2 border rounded bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
+            sel.className = 'grade-input w-full px-1.5 sm:px-2 py-2 border rounded bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
             const wanted = (selectedGrade === '' || selectedGrade == null) ? '' : Number(selectedGrade).toFixed(2);
             const values = validGrades.map(g => g.toFixed(2));
             if (wanted && values.indexOf(wanted) < 0) values.push(wanted);   // a grade that is not on the list stays visible
@@ -145,44 +164,44 @@
             tr.dataset.name = d.name || '';
 
             const tdCode = document.createElement('td');
-            tdCode.className = 'p-2 border-b align-top';
+            tdCode.className = 'p-1 sm:p-2 border-b align-top';
             const code = document.createElement('input');
             code.type = 'text';
-            code.maxLength = 14;
+            code.maxLength = 16;
             code.placeholder = 'Code';
             code.value = d.code || '';
-            code.className = 'code-input w-24 p-2 border rounded font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
+            code.className = 'code-input w-full px-2 py-2 border rounded font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
             tdCode.appendChild(code);
             if (d.name) {
                 const nm = document.createElement('div');
-                nm.className = 'text-xs text-gray-400 mt-1 leading-tight break-words max-w-[9rem]';
+                nm.className = 'text-xs text-gray-400 mt-1 leading-tight break-words';
                 nm.textContent = d.name;
                 tdCode.appendChild(nm);
             }
 
             const tdGrade = document.createElement('td');
-            tdGrade.className = 'p-2 border-b align-top';
+            tdGrade.className = 'p-1 sm:p-2 border-b align-top';
             const grade = createDropdown(d.grade);
             tdGrade.appendChild(grade);
 
             const tdUnits = document.createElement('td');
-            tdUnits.className = 'p-2 border-b align-top';
+            tdUnits.className = 'p-1 sm:p-2 border-b align-top';
             const units = document.createElement('input');
             units.type = 'number';
             units.min = '0.5';
             units.max = '12';
             units.step = '0.5';
             units.value = (d.units === '' || d.units == null) ? '' : d.units;
-            units.className = 'unit-input w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none';
+            units.className = 'unit-input w-full px-1.5 sm:px-2 py-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none';
             tdUnits.appendChild(units);
 
             const tdDel = document.createElement('td');
-            tdDel.className = 'p-2 border-b text-center align-top';
+            tdDel.className = 'p-0 sm:p-2 border-b text-center align-top';
             const del = document.createElement('button');
             del.className = 'text-red-400 hover:text-red-600 font-bold text-xl';
             del.setAttribute('aria-label', 'Remove this row');
             del.innerHTML = '&times;';
-            del.addEventListener('click', () => { tr.remove(); renderNotes(); refreshResult(); });
+            del.addEventListener('click', () => { tr.remove(); renderNotes(); clearResult(); });
             tdDel.appendChild(del);
 
             [tdCode, tdGrade, tdUnits, tdDel].forEach(td => tr.appendChild(td));
@@ -283,7 +302,7 @@
                 leftOut = left;
                 lastProblem = null;
                 renderNotes();
-                calculateGWA(true);
+                clearResult();
                 hideToast();
             });
         }
@@ -341,7 +360,7 @@
             leftOut = out;
             fillRows(keep.map(toRow));
             renderNotes();
-            calculateGWA(true);
+            clearResult();                       // the student presses Calculate when ready
             return true;
         }
 
@@ -391,14 +410,14 @@
 
         /* ---------- the GWA ---------- */
 
-        function calculateGWA(quiet) {
+        function calculateGWA() {
             const rows = readRows().filter(r => r.grade !== '' || r.units !== '').map(r => ({ include: true, grade: r.grade, units: r.units }));
             const res = GwaMath.compute(rows);
             renderNotes();
             const box = document.getElementById('resultBox');
             if (res.gwa === null) {
                 box.classList.add('hidden');
-                if (!quiet) alert("Please add at least one valid grade and unit.");
+                alert("Please add at least one valid grade and unit.");
                 return;
             }
             // The tiers are matched on the GWA rounded to 2 decimals, so nothing falls between 1.50 and 1.51.
@@ -414,11 +433,48 @@
                 note.classList.add('hidden');
             }
             box.classList.remove('hidden');
+            if (tier && CELEBRATE[tier.id]) celebrate(tier, GwaMath.fmt2(res.gwa), !!rn);
         }
 
-        // If the result is already showing, keep it in step with what the student types.
-        function refreshResult() {
-            if (!document.getElementById('resultBox').classList.contains('hidden')) calculateGWA(true);
+        /* ---------- celebration for University Scholar and College Scholar ---------- */
+
+        const CELEBRATE = { us: true, cs: true };      // Dean's Lister does not get a popup
+        let celebrateReturnFocus = null;
+
+        function celebrate(tier, gwaText, rounded) {
+            const box = document.getElementById('celebrate');
+            document.getElementById('celebrateText').textContent = 'You made ' + tier.name + '!';
+            document.getElementById('celebrateGwa').textContent = gwaText;
+            const note = document.getElementById('celebrateNote');
+            note.textContent = rounded ? 'This counts after rounding to 2 decimals. See the note under your result.' : '';
+            note.classList.toggle('hidden', !rounded);
+            celebrateReturnFocus = document.activeElement;
+            box.classList.remove('hidden');
+            box.classList.add('flex');
+            document.getElementById('celebrateClose').focus();
+            GwaCelebrate.confetti();
+        }
+
+        function closeCelebrate() {
+            const box = document.getElementById('celebrate');
+            if (box.classList.contains('hidden')) return;
+            box.classList.add('hidden');
+            box.classList.remove('flex');
+            if (celebrateReturnFocus && celebrateReturnFocus.focus) celebrateReturnFocus.focus();
+        }
+
+        document.getElementById('celebrateClose').addEventListener('click', closeCelebrate);
+        document.getElementById('celebrate').addEventListener('click', e => { if (e.target === e.currentTarget) closeCelebrate(); });
+        document.addEventListener('keydown', e => {
+            if (document.getElementById('celebrate').classList.contains('hidden')) return;
+            if (e.key === 'Escape') closeCelebrate();
+            else if (e.key === 'Tab') { e.preventDefault(); document.getElementById('celebrateClose').focus(); }   // the one button keeps focus
+        });
+
+        // The result is only worked out when the student presses Calculate. If the table changes after that,
+        // the old result no longer matches it, so it is hidden until they press Calculate again.
+        function clearResult() {
+            document.getElementById('resultBox').classList.add('hidden');
         }
 
         document.getElementById('gradesTableBody').addEventListener('input', onEdit);
@@ -426,7 +482,7 @@
         function onEdit(e) {
             unwarn(e.target);
             renderNotes();
-            refreshResult();
+            clearResult();
         }
 
         // Initialize with one empty row
