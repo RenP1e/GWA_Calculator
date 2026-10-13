@@ -23,10 +23,7 @@ Everything runs in your browser. There is no server and no account, and your pic
 ## 🧮 How the GWA is counted
 
 - GWA = total of (grade × units) ÷ total units.
-- Subjects marked INC, dropped, withdrawn, no grade yet or not credited are left out, and so are subjects with units in brackets, like `[3]`. The page tells you what it left out.
-- A failing grade of 5.00 counts like any other grade.
-- The GWA is rounded to 2 decimals before it is matched to a bracket. If rounding is what puts you in a bracket, the result says so, because some schools don't round.
-- The grade choices are 1.00 to 3.00 in steps of 0.25, and 5.00.
+- Subjects marked INC, dropped, withdrawn, no grade yet or not credited are left out, and so are subjects with units in brackets, like `[3]`. The page tells you what it left out..
 
 **Tip:** Use a full-size, straight screenshot where the course codes, units and grades are all visible. Very small or heavily tilted pictures are the most likely to be misread, so check the amber boxes.
 
