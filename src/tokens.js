@@ -14,7 +14,7 @@
   function normNum(raw) {
     var s = String(raw == null ? '' : raw).trim();
     if (!s) return null;
-    var paren = /^\(/.test(s) || /\)$/.test(s);
+    var paren = /^[(\[{]/.test(s) || /[)\]}]$/.test(s);      // round or square brackets both mean "not counted"
     s = s.replace(/^[|\s]+|[|\s]+$/g, '').replace(/^[(\[{\s]+|[)\]}\s]+$/g, '').replace(/^[^\w.,|!]+|[^\w.,|!]+$/g, '').replace(/[.,:;]+$/, '');
     if (!/\d/.test(s)) return null;
     s = s.replace(/(\d),(\d{1,2})$/, '$1.$2');
@@ -54,10 +54,10 @@
   // Words that are never the letters of a course code.
   var NOT_CODE = /^(semester|sem|year|term|page|total|units?|grades?|student|section|level|summer|midyear|school|college|number|no|ay|sy|gwa|average)$/i;
 
-  var ONE_TOKEN = /^([A-Z]{2,8})[-.]?(\d{1,3}[A-Za-z]{0,2})$/; // IT201, CS-101, IT2n (a garbled 211)
+  var ONE_TOKEN = /^([A-Z]{2,8})[-.]?(\d{1,4}[A-Za-z]{0,2})$/; // IT201, CS-101, COMSCI1100, IT2n (a garbled 211)
   var LETTERS = /^[A-Z]{2,8}$/;                              // IT, GE, NSTP, PATHFIT
   var LETTERS_LOOSE = /^[A-Z][a-z]{1,7}$/;                   // Math, Elec (only tried when no all-caps codes exist)
-  var NUMBER_PART = /^[\dOl]{1,3}[A-Za-z]?$/;                // 101, 2O1, 101L
+  var NUMBER_PART = /^[\dOl]{1,4}[A-Za-z]?$/;                // 101, 1100, 2O1, 101L
 
   function fixCodeNumber(s) { return s.replace(/[Ol]/g, function (c) { return c === 'O' ? '0' : '1'; }); }
 

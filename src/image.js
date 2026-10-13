@@ -194,7 +194,20 @@
   // Table borders touch the digits and get read as brackets or bars. Erase long, thin horizontal and vertical lines.
   function removeRules(g, w, h, bg) {
     var thr = Math.max(60, bg - 30), minH = Math.max(60, (w * 0.05) | 0), minV = Math.max(60, (h * 0.03) | 0);
-    var x, y, k, x0, y0, len, a, b, n, lo, hi, dd;
+    var x, y, k, x0, y0, len, a, b, n, lo, hi;
+    // Is the dark stripe through (cx, cy) thin like a ruled line, rather than a filled block? Measure it across at five
+    // spots along its length and take the thinnest, so a letter touching the line in one spot does not fool it.
+    function thinStripe(cx, cy, from, to, vertical) {
+      var best = 99, i, t, p, j, c;
+      for (i = 0; i < 5; i++) {
+        p = Math.round(from + (to - from) * i / 4);
+        t = 1;
+        for (j = 1; j <= 13; j++) { c = vertical ? g[Math.round(p) * w + Math.round(cx) - j] : g[(Math.round(cy) - j) * w + p]; if (c === undefined || c >= thr) break; t++; }
+        for (j = 1; j <= 13; j++) { c = vertical ? g[Math.round(p) * w + Math.round(cx) + j] : g[(Math.round(cy) + j) * w + p]; if (c === undefined || c >= thr) break; t++; }
+        if (t < best) best = t;
+      }
+      return best <= 12;
+    }
     for (y = 5; y < h - 5; y++) {
       x = 0;
       while (x < w) {
@@ -205,7 +218,8 @@
         if (len < minH) continue;
         a = 0; b = 0; n = 0; lo = x0 + (len >> 2); hi = x - (len >> 2);
         for (k = lo; k < hi; k += 3) { n++; if (g[(y - 4) * w + k] < thr) a++; if (g[(y + 4) * w + k] < thr) b++; }
-        if (a < n * 0.3 && b < n * 0.3) for (k = x0; k < x; k++) for (dd = -2; dd <= 2; dd++) g[(y + dd) * w + k] = 255;
+        // A rule only needs one clear side: text often touches it on the other (the first letter of a cell, for example).
+        if ((a < n * 0.3 || b < n * 0.3) && thinStripe(x0 + len * 0.5, y, x0 + len * 0.25, x0 + len * 0.75, false)) for (k = x0; k < x; k++) g[y * w + k] = 255;
       }
     }
     for (x = 5; x < w - 5; x++) {
@@ -218,7 +232,7 @@
         if (len < minV) continue;
         a = 0; b = 0; n = 0; lo = y0 + (len >> 2); hi = y - (len >> 2);
         for (k = lo; k < hi; k += 3) { n++; if (g[k * w + x - 4] < thr) a++; if (g[k * w + x + 4] < thr) b++; }
-        if (a < n * 0.3 && b < n * 0.3) for (k = y0; k < y; k++) for (dd = -2; dd <= 2; dd++) g[k * w + x + dd] = 255;
+        if ((a < n * 0.3 || b < n * 0.3) && thinStripe(x, y0 + len * 0.5, y0 + len * 0.25, y0 + len * 0.75, true)) for (k = y0; k < y; k++) g[k * w + x] = 255;
       }
     }
   }
