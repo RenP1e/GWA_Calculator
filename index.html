@@ -3,264 +3,434 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CLSU GWA Calculator (Auto-Scan)</title>
-    <!-- Load Tesseract.js directly from CDN -->
-    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    
-    <style>
-        body {
-            font-family: system-ui, -apple-system, sans-serif;
-            max-width: 600px;
-            margin: 20px auto;
-            padding: 20px;
-            background-color: #f9f9f9;
-        }
-        .card {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            margin-bottom: 20px;
-        }
-        input, button {
-            padding: 8px 12px;
-            margin: 5px 0;
-            border: 1px solid #ccc;
-            border-radius: 4px;
-        }
-        button {
-            cursor: pointer;
-            background-color: #007bff;
-            color: white;
-            border: none;
-            font-weight: bold;
-        }
-        button:hover { background-color: #0056b3; }
-        .danger-btn { background-color: #ff4d4d; }
-        .danger-btn:hover { background-color: #cc0000; }
-        
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 15px;
-        }
-        th, td {
-            border: 1px solid #ddd;
-            padding: 10px;
-            text-align: left;
-        }
-        th { background-color: #f2f2f2; }
-        #loadingMsg { color: #007bff; font-weight: bold; display: none; }
-        #ocrOutput { width: 100%; margin-top: 10px; display: none; }
-    </style>
+    <title>GWA Calculator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
+<body class="bg-gray-50 min-h-screen p-4 md:p-8 font-sans">
+    <div class="max-w-2xl mx-auto bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <h1 class="text-2xl font-bold text-gray-800 mb-2">GWA Calculator</h1>
+        <p class="text-gray-500 mb-6 text-sm">Upload a screenshot of your grades. We'll read it and calculate your scholarship status.</p>
 
-    <h2>GWA Calculator</h2>
-
-    <!-- OCR Scanner Section -->
-    <div class="card">
-        <h3>1. Scan Grades (Auto-Fills Table)</h3>
-        <input type="file" id="imageInput" accept="image/*">
-        <button id="scanBtn">Scan with Tesseract</button>
-        <p id="loadingMsg">Scanning and analyzing text... please wait.</p>
-        
-        <!-- Text area to show raw text ONLY if auto-parse fails -->
-        <textarea id="ocrOutput" rows="5" placeholder="Raw OCR text will appear here if auto-detect fails..."></textarea>
-    </div>
-
-    <!-- Manual Entry & Table Section -->
-    <div class="card">
-        <h3>2. Input & Calculate</h3>
-        <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-            <input type="text" id="subjectCode" placeholder="Subject (e.g. IT 111)" style="flex: 1;">
-            <input type="number" id="grade" placeholder="Grade (e.g. 1.5)" step="0.25" style="width: 120px;">
-            <input type="number" id="units" placeholder="Units (e.g. 3)" style="width: 100px;">
-            <button id="addSubjectBtn">Add</button>
+        <!-- Upload Area -->
+        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:bg-gray-50 transition-colors mb-4 relative">
+            <input type="file" id="imageInput" accept="image/*" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer">
+            <div id="uploadUI">
+                <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+                <p class="text-sm text-gray-600 font-medium">Tap to upload portal screenshot</p>
+                <p class="text-xs text-gray-400 mt-1">Your photo is read on your device. It is not uploaded anywhere.</p>
+            </div>
+            <div id="loadingUI" class="hidden">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                <p id="loadingText" class="text-sm text-blue-600 font-medium" role="status">Reading the photo…</p>
+            </div>
         </div>
 
-        <table>
-            <thead>
-                <tr>
-                    <th>Subject</th>
-                    <th>Grade</th>
-                    <th>Units</th>
-                </tr>
-            </thead>
-            <tbody id="tableBody">
-                <!-- Rows will be added here via JS -->
-            </tbody>
-        </table>
+        <!-- Notes: problems, subjects left out, boxes to check -->
+        <div id="notes" class="hidden space-y-2 mb-6"></div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px;">
-            <h3 style="margin: 0;">Current GWA: <span id="gwaResult">0.00</span></h3>
-            <button id="clearAllBtn" class="danger-btn">Clear All</button>
+        <!-- Grades Table -->
+        <div class="mb-4">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-lg font-semibold text-gray-700">Grades Editor</h2>
+                <div class="flex items-center gap-4">
+                    <button onclick="clearAll()" class="text-sm text-gray-500 hover:text-red-600 font-medium">Clear all</button>
+                    <button onclick="addRow()" class="text-sm text-blue-600 hover:text-blue-800 font-medium">+ Add Row</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-50 text-gray-600 text-sm">
+                            <th class="p-3 border-b font-medium">Code</th>
+                            <th class="p-3 border-b font-medium">Grade</th>
+                            <th class="p-3 border-b font-medium">Units</th>
+                            <th class="p-3 border-b font-medium w-16"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="gradesTableBody">
+                        <!-- Rows go here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <button onclick="calculateGWA()" class="w-full bg-blue-600 text-white font-semibold py-3 rounded-lg hover:bg-blue-700 transition-colors shadow-sm mb-6">
+            Calculate My GWA
+        </button>
+
+        <!-- Results Box -->
+        <div id="resultBox" class="hidden bg-green-50 border border-green-200 rounded-lg p-5 text-center">
+            <p class="text-green-800 text-sm font-medium mb-1">Your General Weighted Average</p>
+            <p id="gwaValue" class="text-4xl font-bold text-green-700 mb-2"></p>
+            <span id="scholarStatus" class="inline-block bg-green-200 text-green-800 text-xs px-3 py-1 rounded-full font-bold uppercase tracking-wider"></span>
+            <p id="roundNote" class="hidden text-xs text-green-800 mt-3"></p>
         </div>
     </div>
+
+    <!-- Message with an Undo button -->
+    <div id="toast" class="hidden fixed bottom-4 left-1/2 -translate-x-1/2 items-center gap-4 bg-gray-800 text-white text-sm rounded-lg shadow-lg px-4 py-2 z-10">
+        <span id="toastText"></span>
+        <button id="toastAction" class="font-bold underline"></button>
+    </div>
+
+    <!-- The photo reader. It runs in this browser; the files it needs are in vendor/ -->
+    <script src="vendor/tesseract.min.js"></script>
+    <script src="src/tokens.js"></script>
+    <script src="src/layout.js"></script>
+    <script src="src/parse.js"></script>
+    <script src="src/image.js"></script>
+    <script src="src/reader.js"></script>
+    <script src="src/gwa.js"></script>
+    <script src="src/engine.js"></script>
 
     <script>
-        // Array to store our subjects
-        let subjects = [];
+        const validGrades = [1.00, 1.25, 1.50, 1.75, 2.00, 2.25, 2.50, 2.75, 3.00, 5.00];
 
-        // --- 1. OCR AND PREPROCESSING LOGIC ---
-        document.getElementById('scanBtn').addEventListener('click', () => {
-            const fileInput = document.getElementById('imageInput');
-            if (fileInput.files.length === 0) {
-                alert("Please select an image first.");
+        // What the loading text says for each step of reading a photo.
+        const STAGE_TEXT = {
+            prepare: 'Cleaning up the picture…',
+            text: 'Reading the words…',
+            turn: 'Checking if the picture is turned…',
+            numbers: 'Reading the numbers…',
+            cells: 'Checking the numbers again…',
+            retry: 'Trying another way…'
+        };
+        // Subjects with one of these marks have no grade to count, so they are left out of the table.
+        const LEFT_OUT = { INC: 'INC', DRP: 'dropped', UW: 'withdrawn', AW: 'withdrawn', UD: 'dropped', NG: 'no grade yet', NC: 'not credited' };
+        const WARN_CLASSES = ['ring-2', 'ring-amber-400', 'border-amber-500'];
+
+        let reading = false;       // a photo is being read right now
+        let warmed = false;        // the reader has been asked to start loading
+        let leftOut = [];          // subjects from the last photo that are not in the table, as short text
+        let toastTimer = 0;
+        let lastProblem = null;    // { text, detail } for an error from the last photo, shown in the notes
+
+        function onList(g) { return validGrades.some(v => Math.abs(v - Number(g)) < 1e-6); }
+
+        function warn(node, message) {
+            if (!message) return;
+            node.dataset.warn = message;
+            node.title = message;
+            node.classList.add(...WARN_CLASSES);
+        }
+
+        function unwarn(node) {
+            if (!node.dataset.warn) return;
+            delete node.dataset.warn;
+            node.removeAttribute('title');
+            node.classList.remove(...WARN_CLASSES);
+        }
+
+        function createDropdown(selectedGrade) {
+            const sel = document.createElement('select');
+            sel.className = 'grade-input w-full p-2 border rounded bg-white text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
+            const wanted = (selectedGrade === '' || selectedGrade == null) ? '' : Number(selectedGrade).toFixed(2);
+            const values = validGrades.map(g => g.toFixed(2));
+            if (wanted && values.indexOf(wanted) < 0) values.push(wanted);   // a grade that is not on the list stays visible
+            [''].concat(values).forEach(v => {
+                const o = document.createElement('option');
+                o.value = v;
+                o.textContent = v === '' ? '—' : v;
+                sel.appendChild(o);
+            });
+            sel.value = wanted;
+            return sel;
+        }
+
+        // d = { code, name, grade, units, warnCode, warnGrade, warnUnits }. Everything is optional: a new row is empty.
+        function addRow(d) {
+            d = d || {};
+            const tbody = document.getElementById('gradesTableBody');
+            const tr = document.createElement('tr');
+            tr.dataset.name = d.name || '';
+
+            const tdCode = document.createElement('td');
+            tdCode.className = 'p-2 border-b align-top';
+            const code = document.createElement('input');
+            code.type = 'text';
+            code.maxLength = 14;
+            code.placeholder = 'Code';
+            code.value = d.code || '';
+            code.className = 'code-input w-24 p-2 border rounded font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
+            tdCode.appendChild(code);
+            if (d.name) {
+                const nm = document.createElement('div');
+                nm.className = 'text-xs text-gray-400 mt-1 leading-tight break-words max-w-[9rem]';
+                nm.textContent = d.name;
+                tdCode.appendChild(nm);
+            }
+
+            const tdGrade = document.createElement('td');
+            tdGrade.className = 'p-2 border-b align-top';
+            const grade = createDropdown(d.grade);
+            tdGrade.appendChild(grade);
+
+            const tdUnits = document.createElement('td');
+            tdUnits.className = 'p-2 border-b align-top';
+            const units = document.createElement('input');
+            units.type = 'number';
+            units.min = '0.5';
+            units.max = '12';
+            units.step = '0.5';
+            units.value = (d.units === '' || d.units == null) ? '' : d.units;
+            units.className = 'unit-input w-full p-2 border rounded focus:ring-2 focus:ring-blue-500 outline-none';
+            tdUnits.appendChild(units);
+
+            const tdDel = document.createElement('td');
+            tdDel.className = 'p-2 border-b text-center align-top';
+            const del = document.createElement('button');
+            del.className = 'text-red-400 hover:text-red-600 font-bold text-xl';
+            del.setAttribute('aria-label', 'Remove this row');
+            del.innerHTML = '&times;';
+            del.addEventListener('click', () => { tr.remove(); renderNotes(); refreshResult(); });
+            tdDel.appendChild(del);
+
+            [tdCode, tdGrade, tdUnits, tdDel].forEach(td => tr.appendChild(td));
+            tbody.appendChild(tr);
+
+            warn(code, d.warnCode);
+            warn(grade, d.warnGrade);
+            warn(units, d.warnUnits);
+        }
+
+        // The table as plain data (for Undo, and for the GWA).
+        function readRows() {
+            return Array.from(document.querySelectorAll('#gradesTableBody tr')).map(tr => {
+                const code = tr.querySelector('.code-input'), g = tr.querySelector('.grade-input'), u = tr.querySelector('.unit-input');
+                return {
+                    code: code.value, name: tr.dataset.name || '', grade: g.value, units: u.value,
+                    warnCode: code.dataset.warn || '', warnGrade: g.dataset.warn || '', warnUnits: u.dataset.warn || ''
+                };
+            });
+        }
+
+        function fillRows(list) {
+            document.getElementById('gradesTableBody').innerHTML = '';
+            if (list.length) list.forEach(r => addRow(r)); else addRow();
+        }
+
+        function hasContent(rows) { return rows.some(r => r.code || r.grade || r.units); }
+
+        /* ---------- notes under the upload box ---------- */
+
+        function showNote(kind, text, detail) {
+            const box = document.getElementById('notes');
+            const colors = {
+                gray: 'bg-gray-50 border-gray-200 text-gray-600',
+                amber: 'bg-amber-50 border-amber-200 text-amber-800',
+                red: 'bg-red-50 border-red-200 text-red-700'
+            };
+            const p = document.createElement('div');
+            p.className = 'border rounded-lg p-3 text-sm ' + colors[kind];
+            p.appendChild(document.createTextNode(text));
+            if (detail) {
+                const d = document.createElement('details');
+                d.className = 'mt-2 text-xs';
+                const s = document.createElement('summary');
+                s.className = 'cursor-pointer';
+                s.textContent = 'Details';
+                const pre = document.createElement('pre');
+                pre.className = 'whitespace-pre-wrap break-words mt-1';
+                pre.textContent = detail;
+                d.appendChild(s);
+                d.appendChild(pre);
+                p.appendChild(d);
+            }
+            box.appendChild(p);
+            box.classList.remove('hidden');
+        }
+
+        // Rebuilds the notes from what is on the page now.
+        function renderNotes() {
+            const box = document.getElementById('notes');
+            box.innerHTML = '';
+            box.classList.add('hidden');
+            if (lastProblem) showNote('red', lastProblem.text, lastProblem.detail);
+            if (leftOut.length) showNote('gray', 'Left out of the GWA: ' + leftOut.join(', ') + '.');
+            if (document.querySelector('#gradesTableBody [data-warn]')) {
+                showNote('amber', 'Boxes with an amber border are numbers the reader was not sure about or could not read. Compare them with your photo.');
+            }
+            const half = readRows().filter(r => (r.grade === '') !== (r.units === ''));
+            if (half.length) {
+                showNote('amber', (half.length === 1 ? '1 row is' : half.length + ' rows are') + ' missing a grade or units, so ' + (half.length === 1 ? 'it is' : 'they are') + ' not counted yet.');
+            }
+        }
+
+        /* ---------- Clear all, Undo ---------- */
+
+        function hideToast() {
+            clearTimeout(toastTimer);
+            const t = document.getElementById('toast');
+            t.classList.add('hidden');
+            t.classList.remove('flex');
+        }
+
+        function toast(text, actionLabel, action) {
+            const t = document.getElementById('toast');
+            document.getElementById('toastText').textContent = text;
+            const b = document.getElementById('toastAction');
+            b.textContent = actionLabel;
+            b.onclick = action;
+            t.classList.remove('hidden');
+            t.classList.add('flex');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(hideToast, 8000);
+        }
+
+        function offerUndo(text, rows, left) {
+            toast(text, 'Undo', () => {
+                fillRows(rows);
+                leftOut = left;
+                lastProblem = null;
+                renderNotes();
+                calculateGWA(true);
+                hideToast();
+            });
+        }
+
+        function clearAll() {
+            const rows = readRows(), left = leftOut.slice(), had = hasContent(rows) || left.length > 0;
+            fillRows([]);
+            leftOut = [];
+            lastProblem = null;
+            document.getElementById('resultBox').classList.add('hidden');
+            renderNotes();
+            if (had) offerUndo('The table is cleared.', rows, left);
+        }
+
+        /* ---------- reading a photo ---------- */
+
+        function setLoading(text) { document.getElementById('loadingText').textContent = text; }
+
+        // Start loading the reader early, as soon as the student reaches for the upload box.
+        function prewarm() {
+            if (warmed || GwaEngine.ready()) return;
+            warmed = true;
+            GwaEngine.start().catch(() => { warmed = false; });
+        }
+
+        function toRow(r) {
+            const noGrade = r.grade === '';
+            let warnGrade = '';
+            if (noGrade) warnGrade = r.status === 'FAILED' ? 'Marked failed, but no grade was shown. Pick it (usually 5.00).' : 'The grade could not be read. Pick it.';
+            else if (r.flags.indexOf('dot-added') >= 0) warnGrade = 'The dot in the grade was filled in by the reader. Check it.';
+            else if (!onList(r.grade)) warnGrade = 'This grade is not on the list. Check it.';
+            let warnUnits = '';
+            if (r.units === '') warnUnits = 'Units could not be read. Type them in.';
+            else if (r.flags.indexOf('big-units') >= 0) warnUnits = 'That is a lot of units. Check it.';
+            return {
+                code: r.code, name: r.name, grade: r.grade, units: r.units, warnGrade: warnGrade, warnUnits: warnUnits,
+                warnCode: r.flags.indexOf('code?') >= 0 ? 'The code was hard to read.' : ''
+            };
+        }
+
+        // Puts the rows from a photo in the table. Returns true when the table was replaced.
+        function applyScan(res) {
+            const keep = [], out = [];
+            res.rows.forEach(r => {
+                const label = r.code || r.name || 'A subject';
+                if (LEFT_OUT[r.status]) out.push(label + ' (' + LEFT_OUT[r.status] + ')');
+                else if (r.nonCredit) out.push(label + ' (units in brackets)');
+                else keep.push(r);
+            });
+            if (!keep.length) {
+                lastProblem = { text: 'No subjects were found in that photo. Try a closer screenshot where the course codes, units and grades all show, or type your grades into the table.' };
+                renderNotes();
+                return false;
+            }
+            leftOut = out;
+            fillRows(keep.map(toRow));
+            renderNotes();
+            calculateGWA(true);
+            return true;
+        }
+
+        document.getElementById('imageInput').addEventListener('pointerdown', prewarm);
+
+        document.getElementById('imageInput').addEventListener('change', async function (e) {
+            const file = e.target.files[0];
+            e.target.value = '';                 // so the same file can be chosen again
+            if (!file || reading) return;
+            reading = true;
+            hideToast();
+            lastProblem = null;
+            document.getElementById('uploadUI').classList.add('hidden');
+            document.getElementById('loadingUI').classList.remove('hidden');
+            setLoading('Opening the photo…');
+
+            const rowsBefore = readRows(), leftBefore = leftOut.slice();
+            let step = 'open';
+            try {
+                const canvas = await GwaEngine.openPicture(file);
+                step = 'start';
+                const eng = await GwaEngine.start(m => setLoading(m.text));
+                step = 'read';
+                const res = await GwaReader.readImage(canvas, GwaEngine.deps(eng.worker), stage => setLoading(STAGE_TEXT[stage] || 'Reading…'));
+                if (applyScan(res) && hasContent(rowsBefore)) offerUndo('The table was replaced by the photo.', rowsBefore, leftBefore);
+            } catch (err) {
+                if (step === 'open') {
+                    lastProblem = { text: (err && err.message) || 'That file could not be opened as a picture. Try a JPG or PNG.' };
+                } else if (step === 'start') {
+                    warmed = false;
+                    lastProblem = {
+                        text: 'The photo reader could not start. Check your connection and try again. You can still type your grades into the table.',
+                        detail: (err && (err.detail || err.message)) || ''
+                    };
+                } else {
+                    GwaEngine.reset();
+                    warmed = false;
+                    lastProblem = { text: 'Reading this photo failed. Try again, or type your grades into the table.', detail: (err && err.message) || '' };
+                }
+                renderNotes();
+            } finally {
+                document.getElementById('loadingUI').classList.add('hidden');
+                document.getElementById('uploadUI').classList.remove('hidden');
+                reading = false;
+            }
+        });
+
+        /* ---------- the GWA ---------- */
+
+        function calculateGWA(quiet) {
+            const rows = readRows().filter(r => r.grade !== '' || r.units !== '').map(r => ({ include: true, grade: r.grade, units: r.units }));
+            const res = GwaMath.compute(rows);
+            renderNotes();
+            const box = document.getElementById('resultBox');
+            if (res.gwa === null) {
+                box.classList.add('hidden');
+                if (!quiet) alert("Please add at least one valid grade and unit.");
                 return;
             }
-
-            const file = fileInput.files[0];
-            const reader = new FileReader();
-
-            reader.onload = function(e) {
-                const img = new Image();
-                img.onload = function() {
-                    processImageWithTesseract(img);
-                }
-                img.src = e.target.result;
-            }
-            reader.readAsDataURL(file);
-        });
-
-        function preprocessImage(imgElement) {
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
-            
-            canvas.width = imgElement.width;
-            canvas.height = imgElement.height;
-            ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
-            
-            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            const data = imageData.data;
-            
-            for (let i = 0; i < data.length; i += 4) {
-                const brightness = (data[i] * 0.299) + (data[i + 1] * 0.587) + (data[i + 2] * 0.114);
-                const color = brightness > 128 ? 255 : 0; 
-                data[i] = color;     
-                data[i+1] = color;   
-                data[i+2] = color;   
-            }
-            
-            ctx.putImageData(imageData, 0, 0);
-            return canvas.toDataURL('image/png');
-        }
-
-        async function processImageWithTesseract(imgElement) {
-            const loadingMsg = document.getElementById('loadingMsg');
-            const ocrOutput = document.getElementById('ocrOutput');
-            
-            loadingMsg.style.display = 'block';
-            ocrOutput.style.display = 'none';
-
-            try {
-                const cleanedImageDataUrl = preprocessImage(imgElement);
-                const worker = await Tesseract.createWorker('eng');
-                const { data: { text } } = await worker.recognize(cleanedImageDataUrl);
-                await worker.terminate();
-
-                parseTextToTable(text);
-
-            } catch (error) {
-                console.error("OCR Error:", error);
-                alert("An error occurred during scanning. Check the console.");
-            } finally {
-                loadingMsg.style.display = 'none';
-            }
-        }
-
-        // --- 2. AUTO-PARSER ---
-        function parseTextToTable(rawText) {
-            const lines = rawText.split('\n');
-            let subjectsFound = 0;
-
-            lines.forEach(line => {
-                line = line.trim();
-                if (!line) return;
-
-                // Regex looks for a line ending with two numbers (Grade and Units)
-                const regex = /(.*?)\s+([1-5](?:\.\d{1,2})?)\s+(\d+(?:\.\d{1,2})?)\s*$/;
-                const match = line.match(regex);
-
-                if (match) {
-                    const code = match[1].trim();
-                    const grade = parseFloat(match[2]);
-                    const units = parseFloat(match[3]);
-
-                    if (!isNaN(grade) && !isNaN(units)) {
-                        subjects.push({ code, grade, units });
-                        subjectsFound++;
-                    }
-                }
-            });
-
-            if (subjectsFound > 0) {
-                updateTableAndGWA();
+            // The tiers are matched on the GWA rounded to 2 decimals, so nothing falls between 1.50 and 1.51.
+            const tier = GwaMath.tierFor(res.gwa);
+            document.getElementById('gwaValue').innerText = GwaMath.fmt2(res.gwa);
+            document.getElementById('scholarStatus').innerText = tier ? tier.name : 'No Scholarship Status';
+            const rn = GwaMath.roundingNote(res.raw), note = document.getElementById('roundNote');
+            if (rn) {
+                note.textContent = 'Your exact GWA is ' + rn.exact.toFixed(4) + '. Rounded to ' + GwaMath.fmt2(res.gwa) + ' it counts as ' + rn.used.name +
+                    '. If your college does not round, it would be ' + (rn.exactTier ? rn.exactTier.name : 'no scholarship status') + '.';
+                note.classList.remove('hidden');
             } else {
-                // If auto-parser fails, show raw text so the user can manually copy
-                const ocrOutput = document.getElementById('ocrOutput');
-                ocrOutput.value = rawText;
-                ocrOutput.style.display = 'block';
-                alert("Could not automatically detect standard grades and units in the image. Please enter them manually, or review the raw text.");
+                note.classList.add('hidden');
             }
-            
-            document.getElementById('imageInput').value = '';
+            box.classList.remove('hidden');
         }
 
-        // --- 3. GWA CALCULATOR LOGIC ---
-        document.getElementById('addSubjectBtn').addEventListener('click', () => {
-            const codeInput = document.getElementById('subjectCode');
-            const gradeInput = document.getElementById('grade');
-            const unitsInput = document.getElementById('units');
-
-            const code = codeInput.value || 'N/A';
-            const grade = parseFloat(gradeInput.value);
-            const units = parseFloat(unitsInput.value);
-
-            if (!isNaN(grade) && !isNaN(units)) {
-                subjects.push({ code, grade, units });
-                updateTableAndGWA();
-                
-                codeInput.value = '';
-                gradeInput.value = '';
-                unitsInput.value = '';
-                codeInput.focus();
-            } else {
-                alert("Please enter valid numbers for Grade and Units.");
-            }
-        });
-
-        document.getElementById('clearAllBtn').addEventListener('click', () => {
-            subjects = [];
-            document.getElementById('tableBody').innerHTML = '';
-            document.getElementById('gwaResult').innerText = '0.00';
-            document.getElementById('ocrOutput').value = '';
-            document.getElementById('ocrOutput').style.display = 'none';
-            document.getElementById('imageInput').value = '';
-        });
-
-        function updateTableAndGWA() {
-            const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = '';
-            
-            let totalWeightedGrades = 0;
-            let totalUnits = 0;
-
-            subjects.forEach(sub => {
-                const row = `<tr>
-                    <td>${sub.code}</td>
-                    <td>${sub.grade}</td>
-                    <td>${sub.units}</td>
-                </tr>`;
-                tbody.innerHTML += row;
-
-                totalWeightedGrades += (sub.grade * sub.units);
-                totalUnits += sub.units;
-            });
-
-            const currentGWA = totalUnits > 0 ? (totalWeightedGrades / totalUnits).toFixed(2) : '0.00';
-            document.getElementById('gwaResult').innerText = currentGWA;
+        // If the result is already showing, keep it in step with what the student types.
+        function refreshResult() {
+            if (!document.getElementById('resultBox').classList.contains('hidden')) calculateGWA(true);
         }
+
+        document.getElementById('gradesTableBody').addEventListener('input', onEdit);
+        document.getElementById('gradesTableBody').addEventListener('change', onEdit);
+        function onEdit(e) {
+            unwarn(e.target);
+            renderNotes();
+            refreshResult();
+        }
+
+        // Initialize with one empty row
+        addRow();
     </script>
 </body>
 </html>
