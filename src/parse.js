@@ -6,10 +6,13 @@
 })(typeof self !== 'undefined' ? self : this, function (T, Lay) {
   'use strict';
 
+  var CODE_SURE = 90;                 // a course code read with less confidence than this is read again on its own
   var SKIP_LINE = /\b(gwa|average|total|general|weighted|gpa|earned|summary|cumulative)\b/i;
   var REMARK = /^(passed|pass|failed|fail|remarks?|conditional|completed|credits?|units?|grades?|final|rating|status|midterm)$/i;
 
   function byX(a, b) { return a.w.x0 - b.w.x0; }
+
+  function confOf(ws) { return Math.min.apply(null, ws.map(function (w) { return w.c == null ? 0 : w.c; })); }
 
   function overlaps(w, toks, H) {
     return toks.some(function (t) {
@@ -65,7 +68,9 @@
     return best;
   }
 
-  function isWhole(n) { return n && n.v >= 1 && n.v <= 12 && Math.floor(n.v) === n.v && n.digits <= 4; }
+  // A whole number such as 3 (or 3.0). A grade written "2.00" is a mark, not a whole number.
+  function isWhole(n) { return n && n.v >= 1 && n.v <= 12 && Math.floor(n.v) === n.v && n.digits <= 4 && (n.intLike || n.dec < 2); }
+
 
   // Rows share columns. Group every number in the table by its x position, work out which group is Units
   // (whole numbers) and which is the mark (values like 1.25), then read each row from those two columns.
@@ -95,7 +100,13 @@
       });
     });
     var markCols = cols.filter(function (c) { return c.marks; });
-    if (!markCols.length) return null;
+    if (!markCols.length) {
+      // Not enough marks were read to show a column, but both titles are there: look under the titles (the cells get read again).
+      if (hdr && hdr.ux != null && hdr.gx != null && Math.abs(hdr.gx - hdr.ux) > 2 * H) {
+        return { Xu: hdr.ux, Xg: hdr.gx, tol: Math.max(14, Math.min(Math.max(gap * 0.8, 14), 0.45 * Math.abs(hdr.gx - hdr.ux))) };
+      }
+      return null;
+    }
     var Xg = markCols[markCols.length - 1].x;
     if (hdr && hdr.gx != null) markCols.forEach(function (c) { if (Math.abs(c.x - hdr.gx) < Math.abs(Xg - hdr.gx)) Xg = c.x; });
     var unitCols = cols.filter(function (c) { return !c.marks && c.units; }), Xu = null;
@@ -107,6 +118,8 @@
       });
       Xu = best.x;
     }
+    // Too few units were read to show a column, but the "Units" title is there: look under it (the cells get read again).
+    if (Xu === null && hdr && hdr.ux != null && Math.abs(hdr.ux - Xg) > 2 * H) Xu = hdr.ux;
     var tol = Math.max(gap * 0.8, 14);
     if (Xu !== null) tol = Math.max(14, Math.min(tol, 0.45 * Math.abs(Xg - Xu)));
     return { Xu: Xu, Xg: Xg, tol: tol };
@@ -214,11 +227,21 @@
     }
     items.forEach(function (it) {
       var p = it.pick, rowCy = p.g ? p.g.w.cy : p.u ? p.u.w.cy : it.a.cy;
-      if (it.a.weak && !p.gr && !it.status) return;
+      // A doubtful code with nothing in its mark column is probably not a row at all; one with some number there (even a garbled one) is.
+      var nearMark = it.toks.some(function (t) { return Math.abs(t.w.cx - model.Xg) <= 2 * model.tol; });
+      if (it.a.weak && !p.gr && !it.status && !nearMark) return;
+      // A code the reader was unsure of (or could not make into a code at all) is read again, one line at a time.
+      // The crop reaches well past the word on the right: a last letter the reader dropped lies beyond its box.
+      {
+        var codeWhy = (it.a.weak || (it.a.conf != null && it.a.conf < CODE_SURE)) ? 'code' : 'verify';
+        (it.a.boxes || []).forEach(function (bx) {
+          out.push({ field: 'code', reason: codeWhy, x0: bx.x0 - 0.6 * H, y0: bx.y0 - 0.25 * H, x1: bx.x1 + 1.2 * H, y1: bx.y1 + 0.25 * H });
+        });
+      }
       if (model.Xu !== null) {
         if (!p.u) add('units', 'missing', model.Xu, rowCy, halfU);
         else if (p.u.w.p !== 3) {
-          var why = p.un.paren ? 'bracket' : (p.u.w.c || 0) < 80 ? 'unsure' : mode === 'all' ? 'check' : '';
+          var why = (p.un.paren || p.u.br) ? 'bracket' : (p.u.w.c || 0) < 80 ? 'unsure' : mode === 'all' ? 'check' : '';
           if (why) add('units', why, p.u.w.cx, p.u.w.cy, Math.max(halfU, p.u.w.w / 2 + 0.7 * H));
         }
       }
@@ -248,16 +271,136 @@
     var pitch = gaps.length ? Lay.median(gaps) : 2.5 * H;
     meta.pitch = pitch;
     // A code the reader garbled ("lT2l1") can still be spotted: it sits in the code column and mixes letters and digits.
-    var codeX = Lay.median(anchors.map(function (a) { return a.x0; })), strongLines = anchors.map(function (a) { return a.line; });
-    var yMin = anchors[0].cy - pitch, yMax = anchors[anchors.length - 1].cy + pitch, weak = [];
+    var codeX = Lay.median(anchors.map(function (a) { return a.x0; })), strongLines = [];
+    anchors.forEach(function (a) { (a.lines || [a.line]).forEach(function (L) { strongLines.push(L); }); });
+    var yMin = anchors[0].cy - 1.6 * pitch, yMax = anchors[anchors.length - 1].cy + 1.6 * pitch, weak = [];
+    // The same for a wrapped code whose top half the reader garbled ("SOCsC" over "1120").
+    if (anchors.some(function (a) { return a.stacked; })) {
+      var used = [];
+      anchors.forEach(function (a) { (a.parts || []).forEach(function (ws) { ws.forEach(function (w) { used.push(w); }); }); });
+      Lay.findStacked(lines, false, used, true).forEach(function (a) {
+        if (Math.abs(a.x0 - codeX) > Math.max(0.06 * W, 40) || a.cy < yMin || a.cy > yMax || SKIP_LINE.test(a.lines[0].text)) return;
+        a.weak = true; a.conf = 0;
+        weak.push(a);
+      });
+    }
+    var tolX = Math.max(0.06 * W, 40);
+    var stackGap = Lay.median(anchors.filter(function (a) { return a.stacked; }).map(function (a) { return a.parts[1][0].cy - a.parts[0][0].cy; }));
+    var stackWidth = Math.max.apply(null, [0].concat(anchors.filter(function (a) { return a.stacked; }).map(function (a) { return a.parts[0][0].x1 - a.parts[0][0].x0; })));
     lines.forEach(function (L) {
       if (strongLines.indexOf(L) >= 0 || L.cy < yMin || L.cy > yMax || SKIP_LINE.test(L.text)) return;
-      var w0 = L.words[0], t = w0.t.replace(/[,;:]+$/, '');
-      if (Math.abs(w0.x0 - codeX) > Math.max(0.06 * W, 40) || t.length < 2 || t.length > 12) return;
-      if (!/\d/.test(t) || !/[A-Za-z]/.test(t) || T.normNum(t)) return;
-      weak.push({ code: t, x0: w0.x0, x1: w0.x1, y0: w0.y0, y1: w0.y1, cy: w0.cy, line: L, weak: true });
+      if (weak.some(function (a) { return a.lines.indexOf(L) >= 0; })) return;      // already found as a wrapped code
+      var k = 0, w0, t, w1n;
+      while (k < L.words.length && Math.abs(L.words[k].x0 - codeX) > tolX) k++;     // the first word in the code column
+      if (k >= L.words.length) return;
+      w0 = L.words[k]; t = T.clean(w0.t); w1n = L.words[k + 1];
+      if (t.length < 2 && !/^\d$/.test(t) || t.length > 12) return;
+      // The letters of the code are gone altogether (the reader dropped them) and only its number is left: "1120".
+      if (/^\d{3,4}[A-Za-z]?$/.test(t) && T.codeNumber(w0.t)) {
+        var num = T.codeNumber(w0.t);
+        // Under the code column's left edge it is the second line of a wrapped code, so the letters sit one line above.
+        // Further right it is a code written on one line, and its letters should be to the left.
+        if (Math.abs(w0.x0 - codeX) <= 0.9 * H) {
+          var gap = stackGap > 0 ? stackGap : 2.2 * H;
+          var top = { x0: codeX, x1: Math.max(w0.x1, codeX + (stackWidth || 6 * H)), y0: w0.y0 - gap, y1: w0.y1 - gap, cx: 0, cy: w0.cy - gap, c: 0 };
+          weak.push({
+            code: num, top: '', num: num, x0: Math.min(codeX, w0.x0), x1: w0.x1, y0: top.y0, y1: w0.y1, cy: (top.cy + w0.cy) / 2,
+            line: L, lines: [L], weak: true, conf: 0, parts: [[top], [w0]], stacked: true
+          });
+        } else {
+          var lead = { x0: codeX, x1: w0.x1, y0: w0.y0, y1: w0.y1, cy: w0.cy, c: 0 };
+          weak.push({ code: num, x0: codeX, x1: w0.x1, y0: w0.y0, y1: w0.y1, cy: w0.cy, line: L, lines: [L], weak: true, conf: 0, parts: [[lead]] });
+        }
+        return;
+      }
+      var mixed = /\d/.test(t) && /[A-Za-z]/.test(t) && !T.normNum(t);
+      var lettersOnly = /^[A-Za-z]{2,8}$/.test(t);
+      if (!mixed && !lettersOnly) return;
+      // Letters that are not quite a code ("socscl") or a code that came out as one garbled word ("80CsCl"), usually followed
+      // by the number of the code in the same column: a code the reader garbled. The number is part of it.
+      var hasNum = w1n && T.codeNumber(w1n.t) && w1n.x0 - w0.x1 < 2.4 * H && Math.abs(w1n.cy - w0.cy) < 0.6 * H;
+      if (lettersOnly && !hasNum) return;
+      var ws = hasNum ? [w0, w1n] : [w0];
+      weak.push({
+        code: hasNum ? t + ' ' + T.codeNumber(w1n.t) : t, x0: w0.x0, x1: ws[ws.length - 1].x1,
+        y0: Math.min.apply(null, ws.map(function (w) { return w.y0; })), y1: Math.max.apply(null, ws.map(function (w) { return w.y1; })),
+        cy: ws.reduce(function (a, w) { return a + w.cy; }, 0) / ws.length, line: L, lines: [L], weak: true, conf: 0, parts: [ws]
+      });
     });
     if (weak.length) anchors = anchors.concat(weak).sort(function (a, b) { return a.cy - b.cy; });
+    anchors.forEach(function (a) {
+      a.wasWeak = !!a.weak;
+      a.code0 = a.code;
+      a.boxes = (a.parts || [[a]]).map(function (ws) {
+        return {
+          x0: Math.min.apply(null, ws.map(function (w) { return w.x0; })), y0: Math.min.apply(null, ws.map(function (w) { return w.y0; })),
+          x1: Math.max.apply(null, ws.map(function (w) { return w.x1; })), y1: Math.max.apply(null, ws.map(function (w) { return w.y1; }))
+        };
+      });
+    });
+    // Code cells that were read again on their own: take the new reading when it makes a proper code and the reader is surer of it.
+    function readBox(bx) {
+      return w3.filter(function (w) {
+        return w.cx >= bx.x0 - 0.6 * H && w.cx <= bx.x1 + 1.2 * H && w.cy >= bx.y0 - 0.25 * H && w.cy <= bx.y1 + 0.25 * H;
+      }).sort(function (p, q) { return p.x0 - q.x0; });
+    }
+    function plain(ws) { return ws.map(function (w) { return w.t; }).join(' ').replace(/[\[\]()|{}!]/g, ' ').replace(/\s+/g, ' ').trim(); }
+    function votes(ws) { return ws.length ? Math.min.apply(null, ws.map(function (w) { return w.v == null ? 1 : w.v; })) : 0; }
+    // A re-read replaces what the page read only when it is trustworthy: always for a garbled code, when most readings agreed
+    // for a doubtful one, and only when both readings agreed for a code that looked fine.
+    function accept(a, ws) {
+      if (a.weak) return true;
+      if (a.conf < CODE_SURE) return votes(ws) >= 2 || sure(ws) >= 55;
+      return votes(ws) >= 2;
+    }
+    function sure(ws) { return ws.length ? Math.min.apply(null, ws.map(function (w) { return w.c || 0; })) : -1; }
+    // Course numbers repeat down a sheet (MATH 1100, ARTS 1100, ...). When the page read and the re-read of a code differ in the
+    // number, the one that other rows of the same sheet also have is the more likely to be right.
+    function support(num, self) {
+      var n = 0;
+      anchors.forEach(function (b) {
+        if (b === self || b.wasWeak) return;
+        var m = /\s(\S+)$/.exec(b.code0 || '');
+        if (m && m[1] === num) n++;
+      });
+      return n;
+    }
+    function betterNumber(a, oldNum, newNum) {
+      if (a.weak || !oldNum || !newNum || oldNum === newNum) return true;
+      var so = support(oldNum, a), sn = support(newNum, a);
+      if (sn !== so) return sn > so;
+      // Neither number is seen elsewhere: prefer the one with as many digits as most of the sheet's course numbers have.
+      var lens = {}, best = 0, common = 0;
+      anchors.forEach(function (b) {
+        var m = /\s(\d+)[A-Za-z]?$/.exec(b.code0 || '');
+        if (b === a || b.wasWeak || !m) return;
+        lens[m[1].length] = (lens[m[1].length] || 0) + 1;
+        if (lens[m[1].length] > best) { best = lens[m[1].length]; common = m[1].length; }
+      });
+      var lo = oldNum.replace(/\D/g, '').length, ln = newNum.replace(/\D/g, '').length;
+      if (common && lo !== ln) return ln === common || lo !== common;
+      return true;
+    }
+    if (w3.length) anchors.forEach(function (a) {
+      if (!a.boxes) return;
+      if (a.stacked) {
+        var top = readBox(a.boxes[0]), bottom = readBox(a.boxes[1]);
+        var lt = T.codeLetters(plain(top).toUpperCase(), false), nm = T.codeNumber(plain(bottom));
+        var oldTop = a.top != null ? a.top : a.code.split(' ')[0], oldNum = a.num != null ? a.num : a.code.split(' ')[1];
+        if (lt && accept(a, top)) oldTop = lt;
+        if (nm && accept(a, bottom) && betterNumber(a, oldNum, nm)) oldNum = nm;
+        a.code = (oldTop + ' ' + oldNum).trim();
+        if (a.weak && lt && nm && sure(top) >= 60 && sure(bottom) >= 60) a.weak = false;
+      } else {
+        var got = readBox(a.boxes[0]), m = /^([A-Za-z]{2,8})\s*[-.]?\s*(\S{1,6})$/.exec(plain(got));
+        if (!m || !T.codeLetters(m[1].toUpperCase(), false) || !T.codeNumber(m[2])) return;
+        var was = /\s(\S+)$/.exec(a.code0 || ''), nowNum = T.codeNumber(m[2]);
+        if (accept(a, got) && betterNumber(a, was && was[1], nowNum)) {
+          a.code = m[1].toUpperCase() + ' ' + nowNum;
+          if (sure(got) >= 60) a.weak = false;
+        }
+      }
+    });
     var hdr = Lay.headerInfo(lines, anchors[0].cy, pitch);
     var order = hdr.order || 'ug';
     meta.order = order;
@@ -269,6 +412,7 @@
     }
     function inAnchor(w) {
       return anchors.some(function (a) {
+        if (a.stacked) return w.cx >= a.x0 - 0.3 * H && w.cx <= a.x1 + 0.3 * H && w.cy >= a.y0 - 0.3 * H && w.cy <= a.y1 + 0.3 * H;
         return w.cx >= a.x0 - 0.3 * H && w.cx <= a.x1 + 0.3 * H && Math.abs(w.cy - a.cy) < 0.7 * H;
       });
     }
@@ -296,10 +440,15 @@
       return out;
     }
     var pool = [], txt = [];
+    // A bracket seen by any one read of a spot is kept as a hint, even when another read wins ("(31" and "3" are the same cell).
+    var BRACKET = /[\[\](){}]/;
     numeric(w3).concat(numeric(w2), numeric(w1)).forEach(function (t) {
       var k = -1, q;
+      t.br = BRACKET.test(t.w.t);
       for (q = 0; q < pool.length; q++) if (sameSpot(t.w, pool[q].w)) { k = q; break; }
-      if (k < 0) pool.push(t); else if (tokScore(t) > tokScore(pool[k])) pool[k] = t;
+      if (k < 0) pool.push(t);
+      else if (tokScore(t) > tokScore(pool[k])) { t.br = t.br || pool[k].br; pool[k] = t; }
+      else pool[k].br = pool[k].br || t.br;
     });
     w1.forEach(function (w) { if (!T.normNum(w.t) && !inAnchor(w) && !onHeading(w)) txt.push(w); });
 
@@ -311,6 +460,12 @@
       if (k >= 0 && rightOfCode(t.w, anchors[k])) items[k].toks.push(t);
     });
     txt.forEach(function (w) {
+      var k = owner(w);
+      if (k >= 0 && rightOfCode(w, anchors[k])) items[k].txt.push(w);
+    });
+    // Words from cells that were read again on their own can show a mark such as INC that the page read missed.
+    w3.forEach(function (w) {
+      if (T.normNum(w.t) || inAnchor(w) || onHeading(w)) return;
       var k = owner(w);
       if (k >= 0 && rightOfCode(w, anchors[k])) items[k].txt.push(w);
     });
@@ -331,7 +486,7 @@
       // A digit that ends a title ("Fitness 3") is a number token too; keep it when it is not in the units or grade column.
       var extra = picks.length ? it.toks.filter(function (t) { return t !== p.u && t !== p.g; }).map(function (t) { return t.w; }) : [];
       var name = cleanTitle(it.txt.concat(extra), it.a.x1 - 0.3 * H, picks, H);
-      if (it.a.weak && !p.gr && !status) return;
+      if (it.a.wasWeak && !p.gr && !status) return;
       rows.push(makeRow(it.a.code, name, p.un, p.gr, status, lastBefore(heads, it.a.cy), it.a.weak ? ['code?'] : []));
     });
     var d = dedupeRows(rows);

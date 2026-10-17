@@ -18,6 +18,7 @@
       var t = String(w.t != null ? w.t : w.text != null ? w.text : '').trim();
       if (!t) return;
       var o = { t: t, x0: w.x0, y0: w.y0, x1: w.x1, y1: w.y1, c: w.c == null ? 0 : w.c, p: pass };
+      if (w.v != null) o.v = w.v;                        // how many readings of a re-read cell agreed on this text
       o.cx = (o.x0 + o.x1) / 2; o.cy = (o.y0 + o.y1) / 2; o.w = o.x1 - o.x0; o.h = o.y1 - o.y0;
       out.push(o);
     });
@@ -107,21 +108,63 @@
     return lines;
   }
 
-  // The leftmost course code on each line.
+  function confOf(ws) { return Math.min.apply(null, ws.map(function (w) { return w.c == null ? 0 : w.c; })); }
+
+  // The leftmost course code on each line. A code that the page wrapped onto two lines (the letters, with the number
+  // right under them: common on a phone) is found too. Each anchor has x0 x1 y0 y1 cy (the middle of the whole code),
+  // lines (every line it sits on), conf (how sure the reader was) and parts (the words it is made of).
   function findAnchors(lines, loose) {
-    var out = [];
+    var out = [], taken = [];
     lines.forEach(function (L) {
       var ws = L.words;
       for (var i = 0; i < ws.length; i++) {
         var hit = T.codeAt(ws, i, loose);
         if (!hit) continue;
-        var last = ws[i + hit.span - 1];
+        var used = ws.slice(i, i + hit.span), last = ws[i + hit.span - 1];
+        used.forEach(function (w) { taken.push(w); });
         out.push({
           code: hit.text, x0: ws[i].x0, x1: last.x1, y0: Math.min(ws[i].y0, last.y0), y1: Math.max(ws[i].y1, last.y1),
-          cy: (ws[i].cy + last.cy) / 2, line: L
+          cy: (ws[i].cy + last.cy) / 2, line: L, lines: [L], conf: confOf(used), parts: [used]
         });
         break;
       }
+    });
+    return out.concat(findStacked(lines, loose, taken)).sort(function (a, b) { return a.cy - b.cy; });
+  }
+
+  // Letters with the number directly below, both starting at the same left edge and nothing else between them.
+  function findStacked(lines, loose, taken, anyCase) {
+    var hs = [], out = [];
+    lines.forEach(function (L) { L.words.forEach(function (w) { if (w.h > 4) hs.push(w.h); }); });
+    var H = median(hs) || 20;
+    lines.forEach(function (La, ia) {
+      La.words.forEach(function (a) {
+        var letters = anyCase ? T.codeLettersAny(a.t) : T.codeLetters(a.t, loose);
+        if (!letters || taken.indexOf(a) >= 0) return;
+        for (var ib = ia + 1; ib < lines.length; ib++) {
+          var Lb = lines[ib], b = null;
+          if (Lb.cy - La.cy > 3.4 * H) break;
+          Lb.words.forEach(function (w) {
+            if (!b && taken.indexOf(w) < 0 && Math.abs(w.x0 - a.x0) <= 0.9 * H && (anyCase ? T.codeNumberAny(w.t) : T.codeNumber(w.t))) b = w;
+          });
+          if (!b) continue;
+          // Something else sitting under the letters (between the two halves) means these are not two halves of one code.
+          var between = false;
+          for (var im = ia; im <= ib; im++) {
+            lines[im].words.forEach(function (w) {
+              if (w === a || w === b) return;
+              if (w.cy > a.cy + 0.3 * H && w.cy < b.cy - 0.3 * H && w.x1 > a.x0 - 0.3 * H && w.x0 < Math.max(a.x1, b.x1) + 0.3 * H) between = true;
+            });
+          }
+          if (between) break;
+          taken.push(a); taken.push(b);
+          out.push({
+            code: letters.toUpperCase() + ' ' + (T.codeNumber(b.t) || T.clean(b.t)), x0: Math.min(a.x0, b.x0), x1: Math.max(a.x1, b.x1), y0: Math.min(a.y0, b.y0),
+            y1: Math.max(a.y1, b.y1), cy: (a.cy + b.cy) / 2, line: La, lines: [La, Lb], conf: confOf([a, b]), parts: [[a], [b]], stacked: true
+          });
+          return;
+        }
+      });
     });
     return out;
   }
@@ -171,7 +214,8 @@
   }
 
   function termHeadings(lines, anchors) {
-    var rowLines = anchors.map(function (a) { return a.line; }), out = [];
+    var rowLines = [], out = [];
+    anchors.forEach(function (a) { (a.lines || [a.line]).forEach(function (L) { rowLines.push(L); }); });
     lines.forEach(function (L) {
       if (rowLines.indexOf(L) >= 0) return;
       var label = termLabel(L.text);
@@ -181,7 +225,7 @@
   }
 
   return {
-    median: median, prepare: prepare, dropJunk: dropJunk, tilt: tilt, clusterLines: clusterLines, findAnchors: findAnchors,
+    median: median, prepare: prepare, dropJunk: dropJunk, tilt: tilt, clusterLines: clusterLines, findAnchors: findAnchors, findStacked: findStacked,
     columnFilter: columnFilter, headerInfo: headerInfo, termLabel: termLabel, termHeadings: termHeadings
   };
 });

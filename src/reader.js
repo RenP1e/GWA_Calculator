@@ -26,34 +26,96 @@
     return Lay.dropJunk(wordsOf(res.data));
   }
 
-  var MAX_CELLS = 60;
-  var ORDER = { missing: 0, bracket: 1, dot: 2, unsure: 3, check: 4 };
+  var MAX_CELLS = 80;
+  var SIZES_CHECK = [42, 52];          // a cell that is only being double-checked: two readings, and they must agree
+  var SIZES = [38, 46, 56];
+  var SIZES_TINY = [60, 80, 100];     // the same for very small text, which needs to be enlarged more
+  var SIZES_CHECK_TINY = [66, 90];            // character heights, in pixels, that a cell is enlarged to for each of its readings
+  var ORDER = { code: 0, missing: 0, bracket: 1, dot: 2, unsure: 3, check: 4, verify: 5 };
+
+  // Read single cells again, each in its own tight crop and enlarged, as one line of text. This is far more reliable
+  // than the whole-page reads for a lone digit. Returns words in picture coordinates.
+  // Where the ink is inside a box of the picture: { x0, y0, x1, y1 } tight around the dark pixels, or null when the box is
+  // empty. Faint leftovers of table lines are not dark enough to count, so they do not end up in the crop.
+  function inkBox(canvas, x0, y0, x1, y1) {
+    var w = x1 - x0, h = y1 - y0, px;
+    try { px = canvas.getContext('2d').getImageData(x0, y0, w, h).data; } catch (e) { return { x0: x0, y0: y0, x1: x1, y1: y1 }; }
+    var max = 0, i, x, y, l;
+    for (i = 0; i < px.length; i += 4) { l = px[i]; if (l > max) max = l; }
+    var cut = max - 90, minX = w, minY = h, maxX = -1, maxY = -1;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      if (px[(y * w + x) * 4] < cut) { if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
+    }
+    if (maxX < 0) return null;
+    return { x0: x0 + Math.max(0, minX - 2), y0: y0 + Math.max(0, minY - 2), x1: x0 + Math.min(w, maxX + 3), y1: y0 + Math.min(h, maxY + 3) };
+  }
+
+  // One reading of a crop of the picture: the words found, in picture coordinates.
+  async function readCrop(worker, canvas, box, k, pad, deps) {
+    var toInput = deps.toInput || function (c) { return c; };
+    var ox = box.x0 - pad, oy = box.y0 - pad;                   // picture position of the crop's top-left corner
+    var cw = Math.round((box.x1 - box.x0 + 2 * pad) * k), ch = Math.round((box.y1 - box.y0 + 2 * pad) * k);
+    var c = deps.makeCanvas(cw, ch), g = c.getContext('2d');
+    g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    g.drawImage(canvas, box.x0, box.y0, box.x1 - box.x0, box.y1 - box.y0, pad * k, pad * k, (box.x1 - box.x0) * k, (box.y1 - box.y0) * k);
+    var got = await recognize(worker, toInput(c), '7', true);
+    return got.map(function (t) {
+      return { t: t.t, c: t.c, x0: ox + t.x0 / k, x1: ox + t.x1 / k, y0: oy + t.y0 / k, y1: oy + t.y1 / k };
+    });
+  }
+
+  function readKey(ws) { return ws.map(function (t) { return t.t; }).join(' ').toUpperCase().replace(/\s+/g, ''); }
+  function readSure(ws) { return ws.length ? Math.min.apply(null, ws.map(function (t) { return t.c == null ? 0 : t.c; })) : -1; }
+
+  // Several readings of one cell (tight and loose crop, two sizes). The reading most of them agree on wins; when they all
+  // differ, the one the reader is surest of. A lone digit is easy to misread at one particular size, rarely at all of them.
+  function consensus(reads) {
+    var groups = {}, best = null;
+    reads.forEach(function (ws) {
+      if (!ws.length) return;
+      var key = readKey(ws), gp = groups[key] || (groups[key] = { n: 0, top: ws, sure: -1 });
+      gp.n++;
+      if (readSure(ws) > gp.sure) { gp.sure = readSure(ws); gp.top = ws; }
+    });
+    Object.keys(groups).forEach(function (key) {
+      var gp = groups[key];
+      if (!best || gp.n > best.n || (gp.n === best.n && gp.sure > best.sure)) best = gp;
+    });
+    return best ? { words: best.top, votes: best.n } : { words: [], votes: 0 };
+  }
 
   // Read single cells again, each in its own tight crop and enlarged, as one line of text. This is far more reliable
   // than the whole-page reads for a lone digit. Returns words in picture coordinates.
   async function readCells(worker, canvas, wants, deps) {
-    var toInput = deps.toInput || function (c) { return c; };
     var list = wants.slice().sort(function (a, b) { return ORDER[a.reason] - ORDER[b.reason]; }).slice(0, MAX_CELLS);
     var out = [], W = canvas.width, H = canvas.height, pad = 12;
     if (!list.length) return out;
-    await worker.setParameters({ tessedit_pageseg_mode: '7', preserve_interword_spaces: '1', user_defined_dpi: '300' });
+    var DIGITS = '0123456789.,[](){}', mode = null;
     for (var i = 0; i < list.length; i++) {
       var w = list[i];
       var sx0 = Math.max(0, Math.floor(w.x0)), sy0 = Math.max(0, Math.floor(w.y0));
       var sx1 = Math.min(W, Math.ceil(w.x1)), sy1 = Math.min(H, Math.ceil(w.y1));
       if (sx1 - sx0 < 4 || sy1 - sy0 < 4) continue;
-      var k = Math.max(2, Math.min(4, Math.round(84 / (w.y1 - w.y0))));
-      var ox = sx0 - pad, oy = sy0 - pad;                       // picture position of the crop's top-left corner
-      var cw = Math.round((sx1 - sx0 + 2 * pad) * k), ch = Math.round((sy1 - sy0 + 2 * pad) * k);
-      var c = deps.makeCanvas(cw, ch), g = c.getContext('2d');
-      g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch);
-      g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
-      g.drawImage(canvas, sx0, sy0, sx1 - sx0, sy1 - sy0, pad * k, pad * k, (sx1 - sx0) * k, (sy1 - sy0) * k);
-      var got = await recognize(worker, toInput(c), '7', true);
-      got.forEach(function (t) {
-        out.push({ t: t.t, c: t.c, x0: ox + t.x0 / k, x1: ox + t.x1 / k, y0: oy + t.y0 / k, y1: oy + t.y1 / k });
-      });
+      var ink = inkBox(canvas, sx0, sy0, sx1, sy1);
+      if (!ink) continue;                                      // nothing written there
+      // Digits only, except in a code cell and in a grade cell that came up empty (that one may say INC or DRP).
+      var isCode = w.field === 'code', want = (isCode || (w.field === 'grade' && w.reason === 'missing')) ? '' : DIGITS;
+      if (mode !== want) {
+        await worker.setParameters({ tessedit_pageseg_mode: '7', preserve_interword_spaces: '1', user_defined_dpi: '300', tessedit_char_whitelist: want });
+        mode = want;
+      }
+      // Tesseract reads best when the characters are about 40 to 55 pixels tall; much bigger and it starts to misread.
+      var ih = ink.y1 - ink.y0, reads = [];
+      var tiny = ih < 24, sizes = w.reason === 'verify' ? (tiny ? SIZES_CHECK_TINY : SIZES_CHECK) : (tiny ? SIZES_TINY : SIZES);
+      for (var q = 0; q < sizes.length; q++) {
+        var k = Math.max(1, Math.min(6, Math.round(sizes[q] / ih * 10) / 10));
+        reads.push(await readCrop(worker, canvas, ink, k, pad, deps));
+      }
+      var win = consensus(reads);
+      win.words.forEach(function (t) { t.v = win.votes; out.push(t); });
     }
+    if (mode) await worker.setParameters({ tessedit_char_whitelist: '' });
     return out;
   }
 

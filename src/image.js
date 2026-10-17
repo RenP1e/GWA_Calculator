@@ -194,45 +194,57 @@
   // Table borders touch the digits and get read as brackets or bars. Erase long, thin horizontal and vertical lines.
   function removeRules(g, w, h, bg) {
     var thr = Math.max(60, bg - 30), minH = Math.max(60, (w * 0.05) | 0), minV = Math.max(60, (h * 0.03) | 0);
-    var x, y, k, x0, y0, len, a, b, n, lo, hi;
-    // Is the dark stripe through (cx, cy) thin like a ruled line, rather than a filled block? Measure it across at five
-    // spots along its length and take the thinnest, so a letter touching the line in one spot does not fool it.
-    function thinStripe(cx, cy, from, to, vertical) {
-      var best = 99, i, t, p, j, c;
-      for (i = 0; i < 5; i++) {
-        p = Math.round(from + (to - from) * i / 4);
-        t = 1;
-        for (j = 1; j <= 13; j++) { c = vertical ? g[Math.round(p) * w + Math.round(cx) - j] : g[(Math.round(cy) - j) * w + p]; if (c === undefined || c >= thr) break; t++; }
-        for (j = 1; j <= 13; j++) { c = vertical ? g[Math.round(p) * w + Math.round(cx) + j] : g[(Math.round(cy) + j) * w + p]; if (c === undefined || c >= thr) break; t++; }
-        if (t < best) best = t;
+    var x, y, k, x0, y0, len, a, b, n, lo, hi, e;
+    // Rules are found on a copy of the picture and erased on the real one. Otherwise erasing the horizontal rules first
+    // would cut every vertical rule into short row-sized pieces, and those pieces are too short to be taken for rules.
+    var src = g.slice();
+    // Is the dark stripe through (cx, cy) thin like a ruled line, rather than a filled block? Measure how thick it is across
+    // at several spots between `from` and `to`. A real rule is thin almost everywhere; a row of bold letters is thin along
+    // the arcs and bars but thick wherever it crosses a stem. `share` is how many of the spots must be thin.
+    // Returns how far the stripe reaches on each side of the point (before / after), or null when it is not thin.
+    function thinStripe(cx, cy, from, to, vertical, spots, share) {
+      var before = 99, after = 99, thin = 0, i, p, j, c, u, v;
+      for (i = 0; i < spots; i++) {
+        p = Math.round(from + (to - from) * i / (spots - 1));
+        u = 0; v = 0;
+        for (j = 1; j <= 13; j++) { c = vertical ? src[p * w + Math.round(cx) - j] : src[(Math.round(cy) - j) * w + p]; if (c === undefined || c >= thr) break; u++; }
+        for (j = 1; j <= 13; j++) { c = vertical ? src[p * w + Math.round(cx) + j] : src[(Math.round(cy) + j) * w + p]; if (c === undefined || c >= thr) break; v++; }
+        if (u + v + 1 > 12) continue;
+        thin++;
+        if (u + v < before + after) { before = u; after = v; }
       }
-      return best <= 12;
+      return thin >= Math.max(1, Math.ceil(spots * share)) ? { before: before, after: after } : null;
     }
     for (y = 5; y < h - 5; y++) {
       x = 0;
       while (x < w) {
-        if (g[y * w + x] >= thr) { x++; continue; }
+        if (src[y * w + x] >= thr) { x++; continue; }
         x0 = x;
-        while (x < w && g[y * w + x] < thr) x++;
+        while (x < w && src[y * w + x] < thr) x++;
         len = x - x0;
         if (len < minH) continue;
+        e = thinStripe(0, y, x0 + len * 0.1, x - len * 0.1, false, 9, 0.8);
+        if (!e) continue;
+        // Look just outside the line (a thick line is several pixels wide), at the middle half of it.
         a = 0; b = 0; n = 0; lo = x0 + (len >> 2); hi = x - (len >> 2);
-        for (k = lo; k < hi; k += 3) { n++; if (g[(y - 4) * w + k] < thr) a++; if (g[(y + 4) * w + k] < thr) b++; }
+        for (k = lo; k < hi; k += 3) { n++; if (src[(y - e.before - 4) * w + k] < thr) a++; if (src[(y + e.after + 4) * w + k] < thr) b++; }
         // A rule only needs one clear side: text often touches it on the other (the first letter of a cell, for example).
-        if ((a < n * 0.3 || b < n * 0.3) && thinStripe(x0 + len * 0.5, y, x0 + len * 0.25, x0 + len * 0.75, false)) for (k = x0; k < x; k++) g[y * w + k] = 255;
+        if (a < n * 0.3 || b < n * 0.3) for (k = x0; k < x; k++) g[y * w + k] = 255;
       }
     }
     for (x = 5; x < w - 5; x++) {
       y = 0;
       while (y < h) {
-        if (g[y * w + x] >= thr) { y++; continue; }
+        if (src[y * w + x] >= thr) { y++; continue; }
         y0 = y;
-        while (y < h && g[y * w + x] < thr) y++;
+        while (y < h && src[y * w + x] < thr) y++;
         len = y - y0;
         if (len < minV) continue;
+        e = thinStripe(x, 0, y0 + len * 0.25, y - len * 0.25, true, 5, 0.2);
+        if (!e) continue;
         a = 0; b = 0; n = 0; lo = y0 + (len >> 2); hi = y - (len >> 2);
-        for (k = lo; k < hi; k += 3) { n++; if (g[k * w + x - 4] < thr) a++; if (g[k * w + x + 4] < thr) b++; }
-        if ((a < n * 0.3 || b < n * 0.3) && thinStripe(x, y0 + len * 0.5, y0 + len * 0.25, y0 + len * 0.75, true)) for (k = y0; k < y; k++) g[k * w + x] = 255;
+        for (k = lo; k < hi; k += 3) { n++; if (src[k * w + x - e.before - 4] < thr) a++; if (src[k * w + x + e.after + 4] < thr) b++; }
+        if (a < n * 0.3 || b < n * 0.3) for (k = y0; k < y; k++) g[k * w + x] = 255;
       }
     }
   }

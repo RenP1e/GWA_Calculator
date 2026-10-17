@@ -59,18 +59,21 @@
   var LETTERS_LOOSE = /^[A-Z][a-z]{1,7}$/;                   // Math, Elec (only tried when no all-caps codes exist)
   var NUMBER_PART = /^[\dOl]{1,4}[A-Za-z]?$/;                // 101, 1100, 2O1, 101L
 
+  // A stray quote, bracket or bar stuck to the front or back of a word (a table border read as a mark) is not part of a code.
+  function clean(text) { return String(text).replace(/^[^A-Za-z0-9]+|[^A-Za-z0-9]+$/g, ''); }
+
   function fixCodeNumber(s) { return s.replace(/[Ol]/g, function (c) { return c === 'O' ? '0' : '1'; }); }
 
   // Is this word the start of a course code? Returns { text, span } (span = words used) or null.
   function codeAt(words, i, loose) {
-    var w = words[i], t = w.t.replace(/[,;:]+$/, '');
+    var w = words[i], t = clean(w.t);
     if (NOT_CODE.test(t)) return null;
     var m = ONE_TOKEN.exec(t);
     if (m && !NOT_CODE.test(m[1])) return { text: m[1] + ' ' + m[2], span: 1 };
     var okLetters = LETTERS.test(t) || (loose && LETTERS_LOOSE.test(t));
     var nx = words[i + 1];
     if (okLetters && nx) {
-      var n = nx.t.replace(/[,;:]+$/, '');
+      var n = clean(nx.t);
       var gap = nx.x0 - w.x1, hh = Math.max(w.y1 - w.y0, nx.y1 - nx.y0);
       if (/\d/.test(n) && NUMBER_PART.test(n) && gap < 2.4 * hh && Math.abs(nx.cy - w.cy) < 0.6 * hh) {
         return { text: t + ' ' + fixCodeNumber(n), span: 2 };
@@ -79,5 +82,33 @@
     return null;
   }
 
-  return { normNum: normNum, asGrade: asGrade, asUnits: asUnits, statusOf: statusOf, codeAt: codeAt, isStep: isStep };
+  // A code that the page wrapped onto two lines ("COMSCI" above "1100", common on a phone) comes in two halves.
+  // codeLetters: the top half, or ''. codeNumber: the bottom half ("1100", "101L", "2O1" -> "201L"), or ''.
+  function codeLetters(text, loose) {
+    var t = clean(text);
+    if (NOT_CODE.test(t)) return '';
+    return (LETTERS.test(t) || (loose && LETTERS_LOOSE.test(t))) ? t : '';
+  }
+
+  // The top half of a wrapped code when the reader garbled it ("SOCsC", "m0"). Only ever used for a doubtful, "weak" anchor.
+  function codeLettersAny(text) {
+    var t = clean(text);
+    return !NOT_CODE.test(t) && /^[A-Za-z0-9]{2,8}$/.test(t) && /[A-Za-z]/.test(t) ? t : '';
+  }
+
+  // The bottom half of a wrapped code when the reader garbled it ("m0" for "1110"). Only used for a doubtful, "weak" anchor.
+  function codeNumberAny(text) {
+    var t = clean(text);
+    return /^[A-Za-z0-9]{1,5}$/.test(t) && /\d/.test(t) ? t : '';
+  }
+
+  function codeNumber(text) {
+    var t = clean(text);
+    return /\d/.test(t) && NUMBER_PART.test(t) ? fixCodeNumber(t) : '';
+  }
+
+  return {
+    normNum: normNum, asGrade: asGrade, asUnits: asUnits, statusOf: statusOf, codeAt: codeAt, isStep: isStep, clean: clean,
+    codeLetters: codeLetters, codeLettersAny: codeLettersAny, codeNumber: codeNumber, codeNumberAny: codeNumberAny
+  };
 });
