@@ -163,12 +163,6 @@
             code.value = d.code || '';
             code.className = 'code-input w-full px-2 py-2 border rounded font-semibold text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none';
             tdCode.appendChild(code);
-            if (d.name) {
-                const nm = document.createElement('div');
-                nm.className = 'text-xs text-gray-400 mt-1 leading-tight break-words';
-                nm.textContent = d.name;
-                tdCode.appendChild(nm);
-            }
 
             const tdGrade = document.createElement('td');
             tdGrade.className = 'p-1 sm:p-2 border-b align-top';
