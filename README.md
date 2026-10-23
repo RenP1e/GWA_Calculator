@@ -15,7 +15,6 @@ Everything runs in your browser. There is no server and no account, and your pic
   - **1.00 - 1.50:** University Scholar (US)
   - **1.51 - 1.75:** College Scholar (CS)
   - **1.76 - 2.00:** Dean's Lister (DL)
-- 🎉 **Confetti:** Get University Scholar or College Scholar and a congratulations popup shows up with confetti.
 - 🔒 **Private:** The reader runs on your own device. Your screenshot stays with you.
 
 ---
